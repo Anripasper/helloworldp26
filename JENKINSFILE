@@ -1,0 +1,76 @@
+pipeline {
+    agent any
+
+    stages {
+        stage('Get Code') {
+            steps {
+               git 'https://github.com/Anripasper/helloworldp26.git'  
+            }
+        }
+
+        stage('Build') {
+            steps {
+                echo 'esto es python , no hay que compilar nada'
+                echo WORKSPACE
+                bat 'dir'
+            }
+        }
+       stage('Tests')
+       {
+           parallel {
+               
+      
+  stage('Unit') {
+    steps {
+         catchError(buildResult : 'UNSTABLE', stageResult: 'FAILURE'){
+        //con esto me marcará la etapa como fallida pero seguirán ejecutando las demás etapas
+        
+        bat '''
+       "C:\\Users\\anrip\\AppData\\Local\\Programs\\Python\\Python313\\python.exe" -m pip install --upgrade pip
+        "C:\\Users\\anrip\\AppData\\Local\\Programs\\Python\\Python313\\python.exe" -m pip install pytest
+        set PYTHONPATH=%WORKSPACE%
+        "C:\\Users\\anrip\\AppData\\Local\\Programs\\Python\\Python313\\python.exe" -m pytest --junitxml=result-unit.xml test\\unit
+        '''
+    }
+    }
+}
+  
+               stage('Rest') {
+    steps {
+        bat '''
+         whoami
+where flask
+flask --version
+where python
+python --version
+          
+        echo === CONFIGURANDO FLASK ===
+        set FLASK_APP=app\\api.py
+        set FLASK_ENV=development
+
+        echo === ARRANCANDO FLASK ===
+        start "" /B "C:\\Users\\anrip\\AppData\\Local\\Programs\\Python\\Python313\\python.exe" -m flask run --port=5000
+
+        echo === ARRANCANDO WIREMOCK ===
+        start "" /B java -jar C:\\UNIR\\Ejercicios\\wiremock\\wiremock-standalone-3.13.2.jar --port 9090 --root-dir %WORKSPACE%\\test\\wiremock
+
+        echo === ESPERANDO SERVICIOS ===
+      
+
+        echo === EJECUTANDO TESTS ===
+        set PYTHONPATH=%WORKSPACE%
+        "C:\\Users\\anrip\\AppData\\Local\\Programs\\Python\\Python313\\python.exe" -m pytest --junitxml=result.xml test\\rest
+        '''
+    }
+}
+}
+}
+    stage('Results') {
+               steps {
+                   junit 'result*.xml'
+                   //esto procesará todos los ficheros que cumplan con ese formato
+               }
+        
+    }
+    }
+}
