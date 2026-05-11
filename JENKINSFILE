@@ -1,50 +1,40 @@
 pipeline {
     agent any
 
+    environment {
+        PYTHON = "python"
+    }
+
     stages {
+
         stage('Get Code') {
             steps {
-               git 'https://github.com/Anripasper/helloworldp26.git'  
+                git 'https://github.com/Anripasper/helloworldp26.git'
             }
         }
 
-        stage('Build') {
+ 
+        stage('Unit') {
             steps {
-                echo 'esto es python , no hay que compilar nada'
-                echo WORKSPACE
-                bat 'dir'
+                catchError(buildResult: 'SUCCESS', stageResult: 'SUCCESS') {
+                    bat '''
+                    set PYTHONPATH=%WORKSPACE%
+                    %PYTHON% -m pytest --junitxml=result-unit.xml test\\unit
+                    '''
+                }
             }
+             post {
+        always {
+            junit 'result-unit.xml'
         }
-       stage('Tests')
-       {
-           parallel {
-               
-      
-  stage('Unit') {
-    steps {
-         catchError(buildResult : 'UNSTABLE', stageResult: 'FAILURE'){
-        //con esto me marcará la etapa como fallida pero seguirán ejecutando las demás etapas
-        
-        bat '''
-       "C:\\Users\\anrip\\AppData\\Local\\Programs\\Python\\Python313\\python.exe" -m pip install --upgrade pip
-        "C:\\Users\\anrip\\AppData\\Local\\Programs\\Python\\Python313\\python.exe" -m pip install pytest
-        set PYTHONPATH=%WORKSPACE%
-        "C:\\Users\\anrip\\AppData\\Local\\Programs\\Python\\Python313\\python.exe" -m pytest --junitxml=result-unit.xml test\\unit
-        '''
-    }
-    }
-}
-  
-               stage('Rest') {
-    steps {
-        bat '''
-         whoami
-where flask
-flask --version
-where python
-python --version
-          
-        echo === CONFIGURANDO FLASK ===
+    
+             }
+             }
+        stage('Rest') {
+            steps {
+                catchError(buildResult: 'SUCCESS', stageResult: 'SUCCESS') {
+                    bat '''
+                     echo === CONFIGURANDO FLASK ===
         set FLASK_APP=app\\api.py
         set FLASK_ENV=development
 
@@ -54,23 +44,118 @@ python --version
         echo === ARRANCANDO WIREMOCK ===
         start "" /B java -jar C:\\UNIR\\Ejercicios\\wiremock\\wiremock-standalone-3.13.2.jar --port 9090 --root-dir %WORKSPACE%\\test\\wiremock
 
+
         echo === ESPERANDO SERVICIOS ===
+	
       
 
         echo === EJECUTANDO TESTS ===
         set PYTHONPATH=%WORKSPACE%
         "C:\\Users\\anrip\\AppData\\Local\\Programs\\Python\\Python313\\python.exe" -m pytest --junitxml=result.xml test\\rest
         '''
-    }
-}
-}
-}
-    stage('Results') {
-               steps {
-                   junit 'result*.xml'
-                   //esto procesará todos los ficheros que cumplan con ese formato
-               }
-        
-    }
+                
+                }
+            }
+        }
+
+        /* =========================
+           ANÁLISIS DE CÓDIGO ESTÁTICO (FLAKE8)
+        ========================= */
+        stage('Static') {
+            steps {
+                bat '''
+                %PYTHON% -m flake8 --exit-zero --format=pylint app > flake8.out
+                '''
+
+                recordIssues(
+                    tools: [flake8(name: 'Flake8', pattern: 'flake8.out')],
+                    qualityGates: [
+                        // ≥8 UNSTABLE
+                        [threshold: 8, type: 'TOTAL', unstable: true],
+
+                        // ≥10 fallo
+                        [threshold: 10, type: 'TOTAL', failed: true]
+                    ]
+                )
+            }
+        }
+
+        /* =========================
+           PRUEBAS DE SEGURIDAD (BANDIT)
+        ========================= */
+        stage('Security') {
+            steps {
+                catchError(buildResult: 'UNSTABLE', stageResult: 'FAILURE') {
+                    bat '''
+                    %PYTHON% -m bandit -r . -f custom -o bandit.out --exit-zero --msg-template "{abspath}:{line}: [{test_id}] {msg}"
+                    '''
+
+                    recordIssues(
+				    tools: [pyLint(name: 'Bandit', pattern: 'bandit.out')],
+                    qualityGates: [
+                    [threshold: 2, type: 'TOTAL', unstable: true],
+                    [threshold: 4, type: 'TOTAL', failed: true]
+                     ]    
+                    )
+                }
+            }
+        }
+
+        /* =========================
+           COVERAGE 
+        ========================= */
+        stage('Coverage') {
+            steps {
+                catchError(buildResult: 'UNSTABLE', stageResult: 'FAILURE') {
+                    bat '''
+                    %PYTHON% -m coverage run --branch --source=app --omit=app\\__init__.py,app\\api.py -m pytest test\\unit
+                    %PYTHON% -m coverage xml
+                    '''
+                }
+
+                recordCoverage(
+                    tools: [[parser: 'COBERTURA', pattern: 'coverage.xml']],
+                    qualityGates: [
+                        // LINEA coverage
+                        [metric: 'LINE', threshold: 85.0, criticality: 'ERROR'],
+                        [metric: 'LINE', threshold: 95.0],
+
+                        // RAMAS coverage
+                        [metric: 'BRANCH', threshold: 80.0, criticality: 'ERROR'],
+                        [metric: 'BRANCH', threshold: 90.0]
+                    ]
+                )
+            }
+        }
+
+        /* =========================
+           PERFORMANCE (JMETER)
+        ========================= */
+        stage('Performance') {
+            steps {
+                bat '''
+                set FLASK_APP=app\\api.py
+                set FLASK_ENV=development
+
+                start "" /B %PYTHON% -m flask run --port=5000
+               echo === ESPERANDO A QUE FLASK RESPONDA ===
+
+        :waitloop
+        curl http://127.0.0.1:5000 >nul 2>&1
+        if errorlevel 1 (
+            echo Flask aun no responde...
+            timeout /t 2 >nul
+            goto waitloop
+        )
+                C:\\Users\\anrip\\Downloads\\apache-jmeter-5.6.3\\apache-jmeter-5.6.3\\bin\\jmeter -n -t test\\jmeter\\flask.jmx -l flask.jtl
+                '''
+
+                perfReport( 
+                    sourceDataFiles: 'flask.jtl', 
+                    errorFailedThreshold: 5,
+                    errorUnstableThreshold: 1
+                    )
+            }
+        }
     }
 }
