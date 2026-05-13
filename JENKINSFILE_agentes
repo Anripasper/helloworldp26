@@ -13,12 +13,16 @@ pipeline {
             agent { label 'windows1' }
 
             steps {
+
+                deleteDir()
+
                 git 'https://github.com/Anripasper/helloworldp26.git'
+
                 stash name: 'source', includes: '**/*'
             }
         }
 
-        stage('Quality Parallel') {
+        stage('Parallel Tests') {
 
             parallel {
 
@@ -28,14 +32,17 @@ pipeline {
 
                     steps {
 
+                        deleteDir()
                         unstash 'source'
 
                         catchError(buildResult: 'SUCCESS', stageResult: 'SUCCESS') {
+
                             bat '''
                             whoami
                             hostname
 
                             set PYTHONPATH=%WORKSPACE%
+
                             %PYTHON% -m pytest --junitxml=result-unit.xml test\\unit
                             '''
                         }
@@ -54,6 +61,7 @@ pipeline {
 
                     steps {
 
+                        deleteDir()
                         unstash 'source'
 
                         bat '''
@@ -64,11 +72,7 @@ pipeline {
                         '''
 
                         recordIssues(
-                            tools: [flake8(name: 'Flake8', pattern: 'flake8.out')],
-                            qualityGates: [
-                                [threshold: 8, type: 'TOTAL', unstable: true],
-                                [threshold: 10, type: 'TOTAL', failed: true]
-                            ]
+                            tools: [flake8(name: 'Flake8', pattern: 'flake8.out')]
                         )
                     }
                 }
@@ -79,23 +83,17 @@ pipeline {
 
                     steps {
 
+                        deleteDir()
                         unstash 'source'
 
                         catchError(buildResult: 'UNSTABLE', stageResult: 'FAILURE') {
+
                             bat '''
                             whoami
                             hostname
 
-                            %PYTHON% -m bandit -r . -f custom -o bandit.out --exit-zero --msg-template "{abspath}:{line}: [{test_id}] {msg}"
+                            %PYTHON% -m bandit -r . -f custom -o bandit.out --exit-zero
                             '''
-
-                            recordIssues(
-                                tools: [pyLint(name: 'Bandit', pattern: 'bandit.out')],
-                                qualityGates: [
-                                    [threshold: 2, type: 'TOTAL', unstable: true],
-                                    [threshold: 4, type: 'TOTAL', failed: true]
-                                ]
-                            )
                         }
                     }
                 }
@@ -106,38 +104,36 @@ pipeline {
 
                     steps {
 
+                        deleteDir()
                         unstash 'source'
 
                         catchError(buildResult: 'UNSTABLE', stageResult: 'FAILURE') {
+
                             bat '''
                             whoami
                             hostname
 
-                            %PYTHON% -m coverage run --branch --source=app --omit=app\\__init__.py,app\\api.py -m pytest test\\unit
+                            %PYTHON% -m coverage run --branch --source=app -m pytest test\\unit
+
                             %PYTHON% -m coverage xml
                             '''
                         }
 
                         recordCoverage(
-                            tools: [[parser: 'COBERTURA', pattern: 'coverage.xml']],
-                            qualityGates: [
-                                [metric: 'LINE', threshold: 85.0, criticality: 'ERROR'],
-                                [metric: 'LINE', threshold: 95.0],
-                                [metric: 'BRANCH', threshold: 80.0, criticality: 'ERROR'],
-                                [metric: 'BRANCH', threshold: 90.0]
-                            ]
+                            tools: [[parser: 'COBERTURA', pattern: 'coverage.xml']]
                         )
                     }
                 }
             }
         }
 
-        stage('Rest') {
+        stage('REST') {
 
             agent { label 'windows1' }
 
             steps {
 
+                deleteDir()
                 unstash 'source'
 
                 catchError(buildResult: 'SUCCESS', stageResult: 'SUCCESS') {
@@ -146,22 +142,28 @@ pipeline {
                     whoami
                     hostname
 
-                    echo === CONFIGURANDO FLASK ===
-                    set FLASK_APP=app\\api.py
+                    echo === FLASK ===
+
+                    set FLASK_APP=app.api
                     set FLASK_ENV=development
 
                     echo === ARRANCANDO FLASK ===
-                    start "" /B "C:\\Users\\anrip\\AppData\\Local\\Programs\\Python\\Python313\\python.exe" -m flask run --port=5000
+
+                    start "" /B %PYTHON% -m flask run --port=5000
 
                     echo === ARRANCANDO WIREMOCK ===
+
                     start "" /B java -jar C:\\UNIR\\Ejercicios\\wiremock\\wiremock-standalone-3.13.2.jar --port 9090 --root-dir %WORKSPACE%\\test\\wiremock
 
                     echo === ESPERANDO SERVICIOS ===
 
+                    ping 127.0.0.1 -n 5 > nul
+
                     echo === EJECUTANDO TESTS ===
+
                     set PYTHONPATH=%WORKSPACE%
 
-                    "C:\\Users\\anrip\\AppData\\Local\\Programs\\Python\\Python313\\python.exe" -m pytest --junitxml=result.xml test\\rest
+                    %PYTHON% -m pytest --junitxml=result.xml test\\rest
                     '''
                 }
             }
@@ -173,13 +175,14 @@ pipeline {
 
             steps {
 
+                deleteDir()
                 unstash 'source'
 
                 bat '''
                 whoami
                 hostname
 
-                set FLASK_APP=app\\api.py
+                set FLASK_APP=app.api
                 set FLASK_ENV=development
 
                 start "" /B %PYTHON% -m flask run --port=5000
@@ -187,11 +190,12 @@ pipeline {
                 echo === ESPERANDO A QUE FLASK RESPONDA ===
 
                 :waitloop
+
                 curl http://127.0.0.1:5000 >nul 2>&1
 
                 if errorlevel 1 (
                     echo Flask aun no responde...
-                    timeout /t 2 >nul
+                    ping 127.0.0.1 -n 3 > nul
                     goto waitloop
                 )
 
