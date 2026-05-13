@@ -14,15 +14,24 @@ pipeline {
 
             steps {
 
-                deleteDir()
+                // Limpiar al inicio
+                cleanWs()
+
+                bat '''
+                echo ===== GET CODE =====
+                whoami
+                hostname
+                echo WORKSPACE=%WORKSPACE%
+                '''
 
                 git 'https://github.com/Anripasper/helloworldp26.git'
 
-                stash name: 'source', includes: '**/*'
+                // Compartir código entre nodos
+                stash name: 'source-code', includes: '**/*'
             }
         }
 
-        stage('Parallel Tests') {
+        stage('Paralelizar') {
 
             parallel {
 
@@ -32,17 +41,17 @@ pipeline {
 
                     steps {
 
-                        deleteDir()
-                        unstash 'source'
+                        unstash 'source-code'
 
                         catchError(buildResult: 'SUCCESS', stageResult: 'SUCCESS') {
 
                             bat '''
+                            echo ===== UNIT =====
                             whoami
                             hostname
+                            echo WORKSPACE=%WORKSPACE%
 
                             set PYTHONPATH=%WORKSPACE%
-
                             %PYTHON% -m pytest --junitxml=result-unit.xml test\\unit
                             '''
                         }
@@ -51,120 +60,162 @@ pipeline {
                     post {
                         always {
                             junit 'result-unit.xml'
+                            cleanWs()
                         }
                     }
                 }
 
                 stage('Static') {
 
-                    agent { label 'windows2' }
+                    agent { label 'windows1' }
 
                     steps {
 
-                        deleteDir()
-                        unstash 'source'
+                        unstash 'source-code'
 
                         bat '''
+                        echo ===== STATIC =====
                         whoami
                         hostname
+                        echo WORKSPACE=%WORKSPACE%
 
                         %PYTHON% -m flake8 --exit-zero --format=pylint app > flake8.out
                         '''
+                    }
 
-                        recordIssues(
-                            tools: [flake8(name: 'Flake8', pattern: 'flake8.out')]
-                        )
+                    post {
+                        always {
+
+                            recordIssues(
+                                tools: [flake8(name: 'Flake8', pattern: 'flake8.out')],
+                                qualityGates: [
+                                    [threshold: 8, type: 'TOTAL', unstable: true],
+                                    [threshold: 10, type: 'TOTAL', criticality: 'FAILURE']
+                                ]
+                            )
+
+                            cleanWs()
+                        }
                     }
                 }
 
                 stage('Security') {
 
-                    agent { label 'windows2' }
-
-                    steps {
-
-                        deleteDir()
-                        unstash 'source'
-
-                        catchError(buildResult: 'UNSTABLE', stageResult: 'FAILURE') {
-
-                            bat '''
-                            whoami
-                            hostname
-
-                            %PYTHON% -m bandit -r . -f custom -o bandit.out --exit-zero
-                            '''
-                        }
-                    }
-                }
-
-                stage('Coverage') {
-
                     agent { label 'windows1' }
 
                     steps {
 
-                        deleteDir()
-                        unstash 'source'
+                        unstash 'source-code'
 
                         catchError(buildResult: 'UNSTABLE', stageResult: 'FAILURE') {
 
                             bat '''
+                            echo ===== SECURITY =====
                             whoami
                             hostname
+                            echo WORKSPACE=%WORKSPACE%
 
-                            %PYTHON% -m coverage run --branch --source=app -m pytest test\\unit
-
-                            %PYTHON% -m coverage xml
+                            %PYTHON% -m bandit -r . -f custom -o bandit.out --exit-zero --msg-template "{abspath}:{line}: [{test_id}] {msg}"
                             '''
                         }
+                    }
 
-                        recordCoverage(
-                            tools: [[parser: 'COBERTURA', pattern: 'coverage.xml']]
-                        )
+                    post {
+                        always {
+
+                            recordIssues(
+                                tools: [pyLint(name: 'Bandit', pattern: 'bandit.out')],
+                                qualityGates: [
+                                    [threshold: 2, type: 'TOTAL', unstable: true],
+                                    [threshold: 4, type: 'TOTAL', criticality: 'FAILURE']
+                                ]
+                            )
+
+                            cleanWs()
+                        }
                     }
                 }
             }
         }
 
-        stage('REST') {
+        stage('Rest') {
+
+            agent { label 'windows2' }
+
+            steps {
+
+                unstash 'source-code'
+
+                catchError(buildResult: 'SUCCESS', stageResult: 'SUCCESS') {
+
+                    bat '''
+                    echo ===== REST =====
+                    whoami
+                    hostname
+                    echo WORKSPACE=%WORKSPACE%
+
+                    echo === CONFIGURANDO FLASK ===
+                    set FLASK_APP=app\\api.py
+                    set FLASK_ENV=development
+
+                    echo === ARRANCANDO FLASK ===
+                    start "" /B %PYTHON% -m flask run --port=5000
+
+                    echo === ARRANCANDO WIREMOCK ===
+                    start "" /B java -jar C:\\UNIR\\Ejercicios\\wiremock\\wiremock-standalone-3.13.2.jar --port 9090 --root-dir %WORKSPACE%\\test\\wiremock
+
+                    ping 127.0.0.1 -n 6 > nul
+
+                    set PYTHONPATH=%WORKSPACE%
+                    %PYTHON% -m pytest --junitxml=result.xml test\\rest
+                    '''
+                }
+            }
+
+            post {
+                always {
+                    junit 'result.xml'
+                
+                }
+            }
+        }
+
+        stage('Coverage') {
 
             agent { label 'windows1' }
 
             steps {
 
-                deleteDir()
-                unstash 'source'
+                unstash 'source-code'
 
-                catchError(buildResult: 'SUCCESS', stageResult: 'SUCCESS') {
+                catchError(buildResult: 'UNSTABLE', stageResult: 'FAILURE') {
 
                     bat '''
+                    echo ===== COVERAGE =====
                     whoami
                     hostname
+                    echo WORKSPACE=%WORKSPACE%
 
-                    echo === FLASK ===
-
-                    set FLASK_APP=app.api
-                    set FLASK_ENV=development
-
-                    echo === ARRANCANDO FLASK ===
-
-                    start "" /B %PYTHON% -m flask run --port=5000
-
-                    echo === ARRANCANDO WIREMOCK ===
-
-                    start "" /B java -jar C:\\UNIR\\Ejercicios\\wiremock\\wiremock-standalone-3.13.2.jar --port 9090 --root-dir %WORKSPACE%\\test\\wiremock
-
-                    echo === ESPERANDO SERVICIOS ===
-
-                    ping 127.0.0.1 -n 5 > nul
-
-                    echo === EJECUTANDO TESTS ===
-
-                    set PYTHONPATH=%WORKSPACE%
-
-                    %PYTHON% -m pytest --junitxml=result.xml test\\rest
+                    %PYTHON% -m coverage run --branch --source=app --omit=app\\__init__.py,app\\api.py -m pytest test\\unit
+                    %PYTHON% -m coverage xml
                     '''
+                }
+            }
+
+            post {
+                always {
+
+                    recordCoverage(
+                        tools: [[parser: 'COBERTURA', pattern: 'coverage.xml']],
+                        qualityGates: [
+                            [metric: 'LINE', threshold: 85.0, criticality: 'ERROR'],
+                            [metric: 'LINE', threshold: 95.0],
+                            [metric: 'BRANCH', threshold: 80.0, criticality: 'ERROR'],
+                            [metric: 'BRANCH', threshold: 90.0]
+                        ]
+                    )
+
+                    cleanWs()
                 }
             }
         }
@@ -175,14 +226,15 @@ pipeline {
 
             steps {
 
-                deleteDir()
-                unstash 'source'
+                unstash 'source-code'
 
                 bat '''
+                echo ===== PERFORMANCE =====
                 whoami
                 hostname
+                echo WORKSPACE=%WORKSPACE%
 
-                set FLASK_APP=app.api
+                set FLASK_APP=app\\api.py
                 set FLASK_ENV=development
 
                 start "" /B %PYTHON% -m flask run --port=5000
@@ -190,7 +242,6 @@ pipeline {
                 echo === ESPERANDO A QUE FLASK RESPONDA ===
 
                 :waitloop
-
                 curl http://127.0.0.1:5000 >nul 2>&1
 
                 if errorlevel 1 (
