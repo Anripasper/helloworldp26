@@ -112,27 +112,28 @@ pipeline {
         /* =========================
            COVERAGE 
         ========================= */
-        stage('Coverage') {
-            steps {
-                
-              unstash 'coverage-report'
+       stage('Coverage') {
+    steps {
+        catchError(buildResult: 'SUCCESS', stageResult: 'FAILURE') {
 
-                recordCoverage(
-                    tools: [[parser: 'COBERTURA', pattern: 'coverage.xml']],
-                   sourceCodeRetention: 'EVERY_BUILD',
-                   failOnError: false,
-                    qualityGates: [
-                        // LINEA coverage
-                        [metric: 'LINE', threshold: 85.0, criticality: 'ERROR'],
-                        [metric: 'LINE', threshold: 95.0],
+            unstash 'coverage-report'
 
-                        // RAMAS coverage
-                        [metric: 'BRANCH', threshold: 80.0, criticality: 'ERROR'],
-                        [metric: 'BRANCH', threshold: 90.0]
-                    ]
-                )
-            }
+            recordCoverage(
+                tools: [[parser: 'COBERTURA', pattern: 'coverage.xml']],
+              
+                qualityGates: [
+                    // LINE coverage
+                    [metric: 'LINE', threshold: 85.0, criticality: 'ERROR'],
+                    [metric: 'LINE', threshold: 95.0],
+
+                    // BRANCH coverage
+                    [metric: 'BRANCH', threshold: 80.0, criticality: 'ERROR'],
+                    [metric: 'BRANCH', threshold: 90.0]
+                ]
+            )
         }
+    }
+}
 
         /* =========================
            PERFORMANCE (JMETER)
