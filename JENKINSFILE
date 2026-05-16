@@ -51,11 +51,17 @@ pipeline {
 
         echo === EJECUTANDO TESTS ===
         set PYTHONPATH=%WORKSPACE%
-        "C:\\Users\\anrip\\AppData\\Local\\Programs\\Python\\Python313\\python.exe" -m pytest --junitxml=result.xml test\\rest
+        "C:\\Users\\anrip\\AppData\\Local\\Programs\\Python\\Python313\\python.exe" -m pytest --junitxml=result-rest.xml test\\rest
         '''
                 
                 }
             }
+            post {
+               always {
+            junit 'result-rest.xml'
+        }
+            }
+            
         }
 
         /* =========================
