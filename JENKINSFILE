@@ -20,8 +20,10 @@ pipeline {
                     bat '''
                     set PYTHONPATH=%WORKSPACE%
                     %PYTHON% -m pytest --junitxml=result-unit.xml test\\unit
+                    coverage xml -o coverage.xml
                     '''
                 }
+                 stash includes: 'coverage.xml', name: 'coverage-report'
             }
              post {
         always {
@@ -39,7 +41,7 @@ pipeline {
         set FLASK_ENV=development
 
         echo === ARRANCANDO FLASK ===
-        start "" /B %PYTHON% -m flask run --port=5000
+        start "" /B "C:\\Users\\anrip\\AppData\\Local\\Programs\\Python\\Python313\\python.exe" -m flask run --port=5000
 
         echo === ARRANCANDO WIREMOCK ===
         start "" /B java -jar C:\\UNIR\\Ejercicios\\wiremock\\wiremock-standalone-3.13.2.jar --port 9090 --root-dir %WORKSPACE%\\test\\wiremock
@@ -51,7 +53,7 @@ pipeline {
 
         echo === EJECUTANDO TESTS ===
         set PYTHONPATH=%WORKSPACE%
-        %PYTHON% -m pytest --junitxml=result-rest.xml test\\rest
+        "C:\\Users\\anrip\\AppData\\Local\\Programs\\Python\\Python313\\python.exe" -m pytest --junitxml=result-rest.xml test\\rest
         '''
                 
                 }
@@ -112,15 +114,13 @@ pipeline {
         ========================= */
         stage('Coverage') {
             steps {
-                catchError(buildResult: 'UNSTABLE', stageResult: 'FAILURE') {
-                    bat '''
-                    %PYTHON% -m coverage run --branch --source=app --omit=app\\__init__.py,app\\api.py -m pytest test\\unit
-                    %PYTHON% -m coverage xml
-                    '''
-                }
+                
+              unstash 'coverage-report'
 
                 recordCoverage(
                     tools: [[parser: 'COBERTURA', pattern: 'coverage.xml']],
+                   sourceCodeRetention: 'EVERY_BUILD',
+                   failOnError: false,
                     qualityGates: [
                         // LINEA coverage
                         [metric: 'LINE', threshold: 85.0, criticality: 'ERROR'],
