@@ -41,7 +41,7 @@ pipeline {
         set FLASK_ENV=development
 
         echo === ARRANCANDO FLASK ===
-        start "" /B "C:\\Users\\anrip\\AppData\\Local\\Programs\\Python\\Python313\\python.exe" -m flask run --port=5000
+        start "" /B %PYTHON% -m flask run --port=5000
 
         echo === ARRANCANDO WIREMOCK ===
         start "" /B java -jar C:\\UNIR\\Ejercicios\\wiremock\\wiremock-standalone-3.13.2.jar --port 9090 --root-dir %WORKSPACE%\\test\\wiremock
@@ -53,7 +53,7 @@ pipeline {
 
         echo === EJECUTANDO TESTS ===
         set PYTHONPATH=%WORKSPACE%
-        "C:\\Users\\anrip\\AppData\\Local\\Programs\\Python\\Python313\\python.exe" -m pytest --junitxml=result-rest.xml test\\rest
+        %PYTHON% -m pytest --junitxml=result-rest.xml test\\rest
         '''
                 
                 }
