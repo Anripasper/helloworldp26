@@ -14,7 +14,7 @@ pipeline {
 
             steps {
 
-                // Limpiar al inicio
+              
                 cleanWs()
 
                 bat '''
@@ -26,7 +26,6 @@ pipeline {
 
                 git 'https://github.com/Anripasper/helloworldp26.git'
 
-                // Compartir código entre nodos
                 stash name: 'source-code', includes: '**/*'
             }
         }
@@ -49,10 +48,11 @@ pipeline {
                             echo ===== UNIT =====
                             whoami
                             hostname
-                            echo WORKSPACE=%WORKSPACE%
 
                             set PYTHONPATH=%WORKSPACE%
-                            %PYTHON% -m pytest --junitxml=result-unit.xml test\\unit
+
+                            %PYTHON% -m coverage run --branch --source=app --omit=app\\__init__.py,app\\api.py -m pytest --junitxml=result-unit.xml test\\unit
+                            %PYTHON% -m coverage xml
                             '''
                         }
                     }
@@ -60,7 +60,6 @@ pipeline {
                     post {
                         always {
                             junit 'result-unit.xml'
-                            cleanWs()
                         }
                     }
                 }
@@ -77,7 +76,6 @@ pipeline {
                         echo ===== STATIC =====
                         whoami
                         hostname
-                        echo WORKSPACE=%WORKSPACE%
 
                         %PYTHON% -m flake8 --exit-zero --format=pylint app > flake8.out
                         '''
@@ -93,8 +91,6 @@ pipeline {
                                     [threshold: 10, type: 'TOTAL', criticality: 'FAILURE']
                                 ]
                             )
-
-                            cleanWs()
                         }
                     }
                 }
@@ -113,7 +109,6 @@ pipeline {
                             echo ===== SECURITY =====
                             whoami
                             hostname
-                            echo WORKSPACE=%WORKSPACE%
 
                             %PYTHON% -m bandit -r . -f custom -o bandit.out --exit-zero --msg-template "{abspath}:{line}: [{test_id}] {msg}"
                             '''
@@ -130,8 +125,6 @@ pipeline {
                                     [threshold: 4, type: 'TOTAL', criticality: 'FAILURE']
                                 ]
                             )
-
-                            cleanWs()
                         }
                     }
                 }
@@ -152,16 +145,11 @@ pipeline {
                     echo ===== REST =====
                     whoami
                     hostname
-                    echo WORKSPACE=%WORKSPACE%
 
-                    echo === CONFIGURANDO FLASK ===
                     set FLASK_APP=app\\api.py
                     set FLASK_ENV=development
 
-                    echo === ARRANCANDO FLASK ===
                     start "" /B %PYTHON% -m flask run --port=5000
-
-                    echo === ARRANCANDO WIREMOCK ===
                     start "" /B java -jar C:\\UNIR\\Ejercicios\\wiremock\\wiremock-standalone-3.13.2.jar --port 9090 --root-dir %WORKSPACE%\\test\\wiremock
 
                     ping 127.0.0.1 -n 6 > nul
@@ -175,7 +163,8 @@ pipeline {
             post {
                 always {
                     junit 'result.xml'
-                
+              
+                    
                 }
             }
         }
@@ -194,9 +183,7 @@ pipeline {
                     echo ===== COVERAGE =====
                     whoami
                     hostname
-                    echo WORKSPACE=%WORKSPACE%
 
-                    %PYTHON% -m coverage run --branch --source=app --omit=app\\__init__.py,app\\api.py -m pytest test\\unit
                     %PYTHON% -m coverage xml
                     '''
                 }
@@ -214,8 +201,7 @@ pipeline {
                             [metric: 'BRANCH', threshold: 90.0]
                         ]
                     )
-
-                    cleanWs()
+                     cleanWs()
                 }
             }
         }
@@ -232,14 +218,11 @@ pipeline {
                 echo ===== PERFORMANCE =====
                 whoami
                 hostname
-                echo WORKSPACE=%WORKSPACE%
 
                 set FLASK_APP=app\\api.py
                 set FLASK_ENV=development
 
                 start "" /B %PYTHON% -m flask run --port=5000
-
-                echo === ESPERANDO A QUE FLASK RESPONDA ===
 
                 :waitloop
                 curl http://127.0.0.1:5000 >nul 2>&1
@@ -252,13 +235,15 @@ pipeline {
 
                 C:\\Users\\anrip\\Downloads\\apache-jmeter-5.6.3\\apache-jmeter-5.6.3\\bin\\jmeter -n -t test\\jmeter\\flask.jmx -l flask.jtl
                 '''
-
-                perfReport(
+                  perfReport(
                     sourceDataFiles: 'flask.jtl',
                     errorFailedThreshold: 5,
                     errorUnstableThreshold: 1
                 )
             }
-        }
+           
+          }
     }
+
+  
 }
